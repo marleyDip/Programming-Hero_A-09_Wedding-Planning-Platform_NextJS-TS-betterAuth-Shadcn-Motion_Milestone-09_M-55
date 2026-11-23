@@ -224,6 +224,7 @@ export async function respondToBooking(
 export async function startPremiumCheckout(): Promise<string> {
   const res = await api<{ url?: string }>("/payments/create-checkout-session", {
     method: "POST",
+
     body: JSON.stringify({ plan: "premium" }),
   });
 
