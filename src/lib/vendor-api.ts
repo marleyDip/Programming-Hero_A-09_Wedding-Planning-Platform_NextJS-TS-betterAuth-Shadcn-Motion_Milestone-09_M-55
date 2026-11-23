@@ -2,15 +2,10 @@
  * WedPlan - vendor dashboard API
  * Place at: lib/vendor-api.ts   (needs lib/bookings-api.ts, which exports the authenticated `api` helper)
  *
- * Every call sends the Better Auth JWT. The checks in this file (ownership, pending-only, free limit)
- * make the mock API behave and give good UX, but they are NOT a security boundary.
- * The real Express API must, from the verified JWT (never from the request body):
- *   - allow only role "vendor" (and not blocked) on these routes
- *   - set vendorId itself when creating a service
- *   - verify the vendor owns a service / booking before reading, changing or deleting it
- *   - enforce the Free plan limit (max 3 active services) and "pending only" for accept / reject
- *   - create the Stripe Checkout session for the CALLER only, and activate Premium only from a
- *     verified Stripe webhook event
+ * Every call sends the Better Auth JWT (through `api`), and the Express API does the real checks:
+ * vendor role, ownership, the Free plan limit and "pending only" for accept / reject. The client never
+ * sends vendorId, status, rating or dates; the server sets them from the verified token.
+ * The `vendorId` arguments are kept so existing components compile; they are no longer sent.
  */
 
 import type { BookingStatus } from "@/lib/bookings-api";
@@ -20,8 +15,7 @@ export { ApiError };
 
 export const FREE_LIMIT = 3;
 
-/* ------------------------------ services ------------------------------ */
-
+// services
 export type ServiceStatus = "pending" | "approved" | "rejected";
 
 export interface VendorService {
@@ -91,87 +85,69 @@ const norm = (s: RawService): VendorService => ({
 
 const enc = encodeURIComponent;
 
+/** Only the fields the server accepts. */
+const toBody = (i: ServiceInput) => ({
+  name: i.name,
+  category: i.category,
+  description: i.description,
+  price: i.price,
+  priceType: i.priceType,
+  location: i.location,
+  images: i.images,
+});
+
 /** All services of the signed-in vendor (every status), newest first. */
 export async function getVendorServices(
-  vendorId: string,
+  _vendorId: string,
   signal?: AbortSignal,
 ): Promise<VendorService[]> {
-  const rows = await api<RawService[]>(`/services?vendorId=${enc(vendorId)}`, {
-    signal,
-  });
+  const rows = await api<RawService[]>("/services/mine", { signal });
+
   return rows
-    .filter((s) => String(s.vendorId) === String(vendorId))
     .map(norm)
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 }
 
-async function owned(id: string, vendorId: string): Promise<RawService> {
-  const s = await api<RawService>(`/services/${enc(id)}`);
-  if (String(s.vendorId) !== String(vendorId))
-    throw new ApiError(403, "This service belongs to another vendor.");
-  return s;
-}
-
+/** One of the caller's own services (403 / 404 from the server if it isn't theirs). */
 export async function getVendorService(
   id: string,
-  vendorId: string,
+  _vendorId: string,
 ): Promise<VendorService> {
-  return norm(await owned(id, vendorId));
+  return norm(await api<RawService>(`/services/mine/${enc(id)}`));
 }
 
-/** New services always start as "pending" until an admin approves them. */
+/** New services always start as "pending" until an admin approves them (set by the server). */
 export async function createService(
-  vendorId: string,
+  _vendorId: string,
   input: ServiceInput,
 ): Promise<VendorService> {
-  const body = {
-    vendorId,
-    name: input.name,
-    category: input.category,
-    description: input.description,
-    price: input.price,
-    priceType: input.priceType,
-    location: input.location,
-    image: input.images[0],
-    images: input.images,
-    status: "pending",
-    isActive: true,
-    rating: 0,
-    reviewCount: 0,
-    createdAt: new Date().toISOString(),
-  };
   return norm(
     await api<RawService>("/services", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify(toBody(input)),
     }),
   );
 }
 
 export async function updateService(
   id: string,
-  vendorId: string,
+  _vendorId: string,
   input: ServiceInput,
 ): Promise<VendorService> {
-  await owned(id, vendorId);
-  const body = { ...input, image: input.images[0] };
   return norm(
     await api<RawService>(`/services/${enc(id)}`, {
       method: "PATCH",
-      body: JSON.stringify(body),
+      body: JSON.stringify(toBody(input)),
     }),
   );
 }
 
 export async function setServiceActive(
   id: string,
-  vendorId: string,
+  _vendorId: string,
   isActive: boolean,
 ): Promise<void> {
-  const s = await owned(id, vendorId);
-  if (s.status === "rejected")
-    throw new ApiError(409, "Rejected services can't be made available.");
-  await api(`/services/${enc(id)}`, {
+  await api(`/services/${enc(id)}/availability`, {
     method: "PATCH",
     body: JSON.stringify({ isActive }),
   });
@@ -179,14 +155,12 @@ export async function setServiceActive(
 
 export async function deleteService(
   id: string,
-  vendorId: string,
+  _vendorId: string,
 ): Promise<void> {
-  await owned(id, vendorId);
   await api(`/services/${enc(id)}`, { method: "DELETE" });
 }
 
-/* ------------------------------ bookings ------------------------------ */
-
+// bookings
 export interface VendorBooking {
   id: string;
   serviceId: string;
@@ -197,6 +171,7 @@ export interface VendorBooking {
   message: string;
   status: BookingStatus;
   createdAt: string;
+
   service: {
     id: string;
     name: string;
@@ -205,6 +180,7 @@ export interface VendorBooking {
     price: number;
     priceType: string;
   } | null;
+
   customer: {
     id: string;
     name: string;
@@ -214,100 +190,31 @@ export interface VendorBooking {
   } | null;
 }
 
-interface RawBooking {
-  id?: string;
-  _id?: string;
-  serviceId: string;
-  vendorId: string;
-  customerId: string;
-  eventDate: string;
-  eventLocation: string;
-  message?: string;
-  status: BookingStatus;
-  createdAt: string;
-}
-interface RawUser {
-  id?: string;
-  _id?: string;
-  name: string;
-  email?: string;
-  image?: string | null;
-  phone?: string | null;
-}
-
 /** Booking requests for this vendor's services (service + customer details attached), newest first. */
 export async function getVendorBookings(
-  vendorId: string,
+  _vendorId: string,
   signal?: AbortSignal,
 ): Promise<VendorBooking[]> {
-  const [rows, services, users] = await Promise.all([
-    api<RawBooking[]>(`/bookings?vendorId=${enc(vendorId)}`, { signal }),
-    api<RawService[]>(`/services?vendorId=${enc(vendorId)}`, { signal }),
-    api<RawUser[]>("/users", { signal }),
-  ]);
-  const svc = new Map(services.map((s) => [String(s.id ?? s._id), s]));
-  const usr = new Map(users.map((u) => [String(u.id ?? u._id), u]));
+  const rows = await api<VendorBooking[]>("/bookings/vendor", { signal });
 
-  return rows
-    .filter((b) => String(b.vendorId) === String(vendorId))
-    .map<VendorBooking>((b) => {
-      const s = svc.get(String(b.serviceId));
-      const u = usr.get(String(b.customerId));
-      return {
-        id: String(b.id ?? b._id),
-        serviceId: String(b.serviceId),
-        vendorId: String(b.vendorId),
-        customerId: String(b.customerId),
-        eventDate: b.eventDate,
-        eventLocation: b.eventLocation,
-        message: b.message ?? "",
-        status: b.status,
-        createdAt: b.createdAt,
-        service: s
-          ? {
-              id: String(s.id ?? s._id),
-              name: s.name,
-              image: s.images?.[0] ?? s.image,
-              category: s.category,
-              price: s.price,
-              priceType: s.priceType ?? "per event",
-            }
-          : null,
-        customer: u
-          ? {
-              id: String(u.id ?? u._id),
-              name: u.name,
-              email: u.email ?? "",
-              image: u.image,
-              phone: u.phone,
-            }
-          : null,
-      };
-    })
-    .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  return [...rows].sort(
+    (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
+  );
 }
 
-/** Accept or reject a PENDING request that belongs to this vendor. Processed requests can't be processed again. */
+/** Accept or reject a PENDING request that belongs to this vendor (one atomic update on the server). */
 export async function respondToBooking(
   id: string,
-  vendorId: string,
+  _vendorId: string,
   decision: "accepted" | "rejected",
 ): Promise<void> {
-  const b = await api<RawBooking>(`/bookings/${enc(id)}`);
-  if (String(b.vendorId) !== String(vendorId))
-    throw new ApiError(403, "This request belongs to another vendor.");
-  if (b.status !== "pending")
-    throw new ApiError(409, `This request is already ${b.status}.`);
-  await api(`/bookings/${enc(id)}`, {
+  await api(`/bookings/${enc(id)}/status`, {
     method: "PATCH",
-    body: JSON.stringify({
-      status: decision,
-      respondedAt: new Date().toISOString(),
-    }),
+    body: JSON.stringify({ status: decision }),
   });
 }
 
-/* ----------------------------- subscription ----------------------------- */
+// subscription
 
 /**
  * Asks the server for a Stripe Checkout session and returns its URL.
@@ -319,6 +226,8 @@ export async function startPremiumCheckout(): Promise<string> {
     method: "POST",
     body: JSON.stringify({ plan: "premium" }),
   });
+
   if (!res.url) throw new ApiError(502, "No checkout URL returned.");
+
   return res.url;
 }
