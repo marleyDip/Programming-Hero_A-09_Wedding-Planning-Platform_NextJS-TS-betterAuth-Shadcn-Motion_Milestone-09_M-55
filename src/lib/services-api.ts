@@ -8,9 +8,14 @@
  * Env:  NEXT_PUBLIC_API_URL=http://localhost:5000
  */
 
+import { authClient } from "@/lib/auth-client";
+
 export const API_URL = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"
 ).replace(/\/$/, "");
+
+/** How long public service data may be served from cache. */
+export const PUBLIC_REVALIDATE_SECONDS = 300;
 
 export interface Vendor {
   id: string;
@@ -38,7 +43,9 @@ export interface Service {
 interface RawService {
   id?: string;
   _id?: string;
-  name: string;
+  name?: string;
+  serviceName?: string;
+  vendor?: RawVendor | null;
   category: string;
   price: number;
   priceType?: string;
@@ -52,26 +59,54 @@ interface RawService {
   reviewCount?: number;
 }
 
-interface RawUser {
+interface RawVendor {
   id?: string;
   _id?: string;
   name: string;
   businessName?: string;
   image?: string | null;
-  role: string;
   subscriptionPlan?: string;
-  isBlocked?: boolean;
 }
 
-async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
+const toVendor = (v: RawVendor): Vendor => ({
+  id: String(v.id ?? v._id),
+  name: v.name,
+  businessName: v.businessName || v.name,
+  image: v.image ?? null,
+  subscriptionPlan: v.subscriptionPlan,
+});
+
+/**
+ * `Authorization: Bearer <JWT>` from Better Auth. Returns {} when signed out, so the API answers 401
+ * and the caller can send the user to Sign In.
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
+  try {
+    const { data } = await authClient.token();
+    return data?.token ? { Authorization: `Bearer ${data.token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+async function getJSON<T>(
+  path: string,
+  signal?: AbortSignal,
+  auth = false,
+): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     signal,
 
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      ...(auth ? await authHeaders() : {}),
+    },
 
-    // next: {
-    //   revalidate: 300, // Refresh cached data every 5 minutes
-    // },
+    // Public lists are cached and refreshed every 5 minutes (Next.js data cache; ignored in the browser).
+    // Anything sent with a JWT is user-specific, so it is never cached.
+    ...(auth
+      ? { cache: "no-store" as const }
+      : { next: { revalidate: PUBLIC_REVALIDATE_SECONDS } }),
   });
 
   if (!res.ok) throw new Error(`Request failed (${res.status})`);
@@ -79,103 +114,37 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** The API caps one page at 500 services. */
+const MAX_LIMIT = 500;
+
 /**
- * Featured services = approved AND active services (from vendors who are not blocked),
- * best rated first, limited to `limit`.
- *
- * Filtering is requested from the API *and* re-checked here, so pending / rejected / inactive
- * services can never leak onto the homepage even if the backend ignores a query param.
+ * Featured services = approved AND active services from vendors who are not blocked, best rated first.
+ * The Express API already applies those rules and attaches the public vendor details to every service.
  */
 export async function getFeaturedServices(
   limit = 6,
   signal?: AbortSignal,
 ): Promise<Service[]> {
-  //   const [services, users] = await Promise.all([
-  //     getJSON<RawService[]>(
-  //       "/services?status=approved&isActive=true&_sort=rating&_order=desc",
-  //       signal,
-  //     ),
+  const qs = new URLSearchParams({
+    sort: "rating",
+    limit: String(Math.min(Math.max(1, Math.floor(limit)), MAX_LIMIT)),
+  });
+  const rows = await getJSON<RawService[]>(`/services?${qs}`, signal);
 
-  //     getJSON<RawUser[]>("/users?role=vendor", signal),
-  //   ]);
-
-  const [services, users] = await Promise.all([
-    getJSON<RawService[]>("/services", signal),
-    getJSON<RawUser[]>("/users", signal),
-  ]);
-
-  // console.log("API URL:", API_URL);
-  // console.log("All services:", services);
-  // console.log("All users:", users);
-
-  //   console.log(
-  //     "Approved services:",
-  //     services.filter((s) => s.status === "approved"),
-  //   );
-
-  //   console.log(
-  //     "Active services:",
-  //     services.filter((s) => s.isActive === true),
-  //   );
-
-  //   console.log(
-  //     "Vendor users:",
-  //     users.filter((u) => u.role === "vendor"),
-  //   );
-
-  // Build vendor lookup
-  const vendors = new Map<string, Vendor>();
-
-  for (const user of users) {
-    // if (u.isBlocked) continue;
-    if (user.role !== "vendor" || user.isBlocked) continue;
-
-    const id = String(user.id ?? user._id);
-
-    vendors.set(id, {
-      id,
-      name: user.name,
-      businessName: user.businessName || user.name,
-      image: user.image,
-      subscriptionPlan: user.subscriptionPlan,
-    });
-  }
-
-  // console.log("Total services:", services.length);
-  // console.log("Total vendors:", vendors.size);
-
-  //   console.log(
-  //     "Matching services:",
-  //     services.filter(
-  //       (service) =>
-  //         service.status === "approved" &&
-  //         service.isActive === true &&
-  //         vendors.has(String(service.vendorId)),
-  //     ),
-  //   );
-
-  // Filter, sort, and select featured services
-  return services
-    .filter(
-      (service) =>
-        service.status === "approved" &&
-        service.isActive === true &&
-        vendors.has(String(service.vendorId)),
-    )
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-    .slice(0, limit)
-    .map((service) => ({
-      id: String(service.id ?? service._id),
-      name: service.name,
-      category: service.category,
-      price: service.price,
-      priceType: service.priceType ?? "per event",
-      location: service.location,
-      image: service.image,
-      description: service.description,
-      rating: service.rating ?? 0,
-      reviewCount: service.reviewCount ?? 0,
-      vendor: vendors.get(String(service.vendorId))!,
+  return rows
+    .filter((s) => s.vendor) // a live service always has its vendor; skip anything odd
+    .map((s) => ({
+      id: String(s.id ?? s._id),
+      name: s.name ?? s.serviceName ?? "",
+      category: s.category,
+      price: s.price,
+      priceType: s.priceType ?? "per event",
+      location: s.location,
+      image: s.image,
+      description: s.description,
+      rating: s.rating ?? 0,
+      reviewCount: s.reviewCount ?? 0,
+      vendor: toVendor(s.vendor!),
     }));
 }
 
@@ -203,97 +172,7 @@ export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
   }));
 }
 
-/**
- * Counts live services per category.
- * Only includes approved and active services
- * from vendors who are not blocked.
- */
-export async function getCategoryCounts(
-  signal?: AbortSignal,
-): Promise<Record<string, number>> {
-  const [services, users] = await Promise.all([
-    getJSON<RawService[]>("/services", signal),
-    getJSON<RawUser[]>("/users", signal),
-  ]);
-
-  // Get valid vendor IDs
-  const validVendorIds = new Set(
-    users
-      .filter((user) => user.role === "vendor" && !user.isBlocked)
-      .map((user) => String(user.id ?? user._id)),
-  );
-
-  // Count approved and active services
-  const counts: Record<string, number> = {};
-
-  for (const service of services) {
-    if (
-      service.status !== "approved" ||
-      service.isActive !== true ||
-      !validVendorIds.has(String(service.vendorId))
-    ) {
-      continue;
-    }
-
-    const category = service.category;
-
-    counts[category] = (counts[category] ?? 0) + 1;
-  }
-
-  return counts;
-}
-
-/**
- * Number of live services per category name.
- * Counts only APPROVED + ACTIVE services from vendors who are not blocked,
- * the same rule used by the Featured Services section.
- */
-/* export async function getCategoryCounts(
-  signal?: AbortSignal,
-): Promise<Record<string, number>> {
-  const [services, users] = await Promise.all([
-    getJSON<RawService[]>("/services?status=approved&isActive=true", signal),
-    getJSON<RawUser[]>("/users?role=vendor", signal),
-  ]);
-
-  const okVendors = new Set(
-    users.filter((u) => !u.isBlocked).map((u) => String(u.id ?? u._id)),
-  );
-
-  const counts: Record<string, number> = {};
-  for (const s of services) {
-    if (
-      s.status !== "approved" ||
-      s.isActive !== true ||
-      !okVendors.has(String(s.vendorId))
-    )
-      continue;
-
-    counts[s.category] = (counts[s.category] ?? 0) + 1;
-  }
-
-  return counts;
-} */
-
-// Platform stats, destinations, testimonials
-async function getLiveServices(signal?: AbortSignal): Promise<RawService[]> {
-  const [services, users] = await Promise.all([
-    getJSON<RawService[]>("/services?status=approved&isActive=true", signal),
-    getJSON<RawUser[]>("/users?role=vendor", signal),
-  ]);
-
-  const okVendors = new Set(
-    users.filter((u) => !u.isBlocked).map((u) => String(u.id ?? u._id)),
-  );
-
-  return services.filter(
-    (s) =>
-      s.status === "approved" &&
-      s.isActive === true &&
-      okVendors.has(String(s.vendorId)),
-  );
-}
-
+/** Real numbers for the homepage, computed by the server from live services only (GET /services/stats). */
 export interface PlatformStats {
   services: number;
   vendors: number;
@@ -301,30 +180,35 @@ export interface PlatformStats {
   categories: number;
 }
 
-/** Real numbers for the "Why choose WedPlan" section (live = approved + active, vendor not blocked). */
+interface RawStats extends PlatformStats {
+  byCategory: Record<string, number>;
+  byLocation: Record<string, number>;
+}
+
+const getStats = (signal?: AbortSignal) =>
+  getJSON<RawStats>("/services/stats", signal);
+
+/** Live service count per category name. */
+export async function getCategoryCounts(
+  signal?: AbortSignal,
+): Promise<Record<string, number>> {
+  return (await getStats(signal)).byCategory;
+}
+
+/** Numbers for the "Why choose WedPlan" section. */
 export async function getPlatformStats(
   signal?: AbortSignal,
 ): Promise<PlatformStats> {
-  const live = await getLiveServices(signal);
+  const { services, vendors, cities, categories } = await getStats(signal);
 
-  return {
-    services: live.length,
-    vendors: new Set(live.map((s) => String(s.vendorId))).size,
-    cities: new Set(live.map((s) => s.location)).size,
-    categories: new Set(live.map((s) => s.category)).size,
-  };
+  return { services, vendors, cities, categories };
 }
 
 /** Live service count per city (key = location name, e.g. "Cox's Bazar"). */
 export async function getLocationCounts(
   signal?: AbortSignal,
 ): Promise<Record<string, number>> {
-  const live = await getLiveServices(signal);
-
-  const counts: Record<string, number> = {};
-
-  for (const s of live) counts[s.location] = (counts[s.location] ?? 0) + 1;
-  return counts;
+  return (await getStats(signal)).byLocation;
 }
 
 export interface Testimonial {
@@ -365,10 +249,7 @@ export function getAllServices(signal?: AbortSignal): Promise<Service[]> {
   return getFeaturedServices(Number.MAX_SAFE_INTEGER, signal);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Service details + bookings                                         */
-/* ------------------------------------------------------------------ */
-
+// Service details & bookings
 export type ServiceErrorCode = "not-found" | "unavailable" | "network";
 
 export class ServiceError extends Error {
@@ -399,14 +280,29 @@ export async function getServiceById(
   try {
     res = await fetch(`${API_URL}/services/${encodeURIComponent(id)}`, {
       signal,
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(await authHeaders()) },
+      cache: "no-store", // sent with a JWT: never cache
     });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
     throw new ServiceError("network", "We couldn't reach the server.");
   }
+
+  if (res.status === 401)
+    throw new ServiceError(
+      "network",
+      "Your session has expired. Please sign in again.",
+    );
+
   if (res.status === 404 || res.status === 400)
     throw new ServiceError("not-found", "This service doesn't exist.");
+
+  if (res.status === 403)
+    throw new ServiceError(
+      "unavailable",
+      "This service is not available for booking right now.",
+    );
+
   if (!res.ok)
     throw new ServiceError(
       "network",
@@ -417,6 +313,7 @@ export async function getServiceById(
     images?: string[];
     createdAt?: string;
   };
+
   if (s.status !== "approved" || s.isActive !== true) {
     throw new ServiceError(
       "unavailable",
@@ -424,30 +321,16 @@ export async function getServiceById(
     );
   }
 
-  let u: RawUser;
-  try {
-    u = await getJSON<RawUser>(
-      `/users/${encodeURIComponent(String(s.vendorId))}`,
-      signal,
-    );
-  } catch (e) {
-    if ((e as Error).name === "AbortError") throw e;
-    throw new ServiceError(
-      "unavailable",
-      "This service is not available for booking right now.",
-    );
-  }
-  if (u.isBlocked || u.role !== "vendor") {
+  if (!s.vendor) {
     throw new ServiceError(
       "unavailable",
       "This service is not available for booking right now.",
     );
   }
 
-  const vid = String(u.id ?? u._id);
   return {
     id: String(s.id ?? s._id),
-    name: s.name,
+    name: s.name ?? s.serviceName ?? "",
     category: s.category,
     price: s.price,
     priceType: s.priceType ?? "per event",
@@ -458,58 +341,94 @@ export async function getServiceById(
     rating: s.rating ?? 0,
     reviewCount: s.reviewCount ?? 0,
     createdAt: s.createdAt,
-    vendor: {
-      id: vid,
-      name: u.name,
-      businessName: u.businessName || u.name,
-      image: u.image,
-      subscriptionPlan: u.subscriptionPlan,
-    },
+    vendor: toVendor(s.vendor),
   };
 }
 
 export interface BookingInput {
   serviceId: string;
-  vendorId: string;
-  customerId: string;
+  /** Ignored by the Express API (it reads both from the JWT and the service record). */
+  vendorId?: string;
+  customerId?: string;
   eventDate: string; // YYYY-MM-DD
   eventLocation: string;
   message: string;
 }
 
-/** Is there already a pending / accepted request by this customer for this service and date? */
+/** Is there already a pending / accepted request by the signed-in customer for this service and date? */
 export async function hasActiveBooking(
   serviceId: string,
-  customerId: string,
+  _customerId: string, // kept so existing callers compile; the server uses the JWT
   eventDate: string,
   signal?: AbortSignal,
 ) {
-  const qs = new URLSearchParams({
-    serviceId,
-    customerId,
-    eventDate,
-  }).toString();
-  const rows = await getJSON<{ status: string }[]>(`/bookings?${qs}`, signal);
-  return rows.some((b) => b.status === "pending" || b.status === "accepted");
+  const qs = new URLSearchParams({ serviceId, eventDate }).toString();
+
+  const res = await getJSON<{ exists: boolean }>(
+    `/bookings/check?${qs}`,
+    signal,
+    true,
+  );
+
+  return res.exists === true;
+}
+
+/** Error from the API, with its HTTP status and machine code (e.g. DUPLICATE_BOOKING). */
+export class BookingError extends Error {
+  status: number;
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.name = "BookingError";
+    this.status = status;
+    this.code = code;
+  }
 }
 
 /**
- * Creates a booking with status "pending".
- * NOTE: in the real Express API, customerId and vendorId must be taken from the verified JWT and
- * the service record on the server, never trusted from the request body. They are sent here only
- * because json-server has no auth.
+ * Creates a booking (the server sets status "pending").
+ * Sends the Better Auth JWT. Only these four fields go in the body: customerId, vendorId, status and
+ * createdAt are set by the server from the token and the service record, never trusted from the client.
  */
 export async function createBooking(input: BookingInput, signal?: AbortSignal) {
   const res = await fetch(`${API_URL}/bookings`, {
     method: "POST",
     signal,
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(await authHeaders()),
+    },
+
+    cache: "no-store",
+
     body: JSON.stringify({
-      ...input,
-      status: "pending",
-      createdAt: new Date().toISOString(),
+      serviceId: input.serviceId,
+      eventDate: input.eventDate,
+      eventLocation: input.eventLocation,
+      message: input.message,
     }),
   });
-  if (!res.ok) throw new Error(`Booking failed (${res.status})`);
+
+  if (!res.ok) {
+    let body: { message?: string; code?: string } = {};
+
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON error body */
+    }
+
+    throw new BookingError(
+      res.status,
+      body.message ??
+        (res.status === 401
+          ? "Please sign in again to book."
+          : `Booking failed (${res.status})`),
+      body.code,
+    );
+  }
+
   return res.json();
 }
