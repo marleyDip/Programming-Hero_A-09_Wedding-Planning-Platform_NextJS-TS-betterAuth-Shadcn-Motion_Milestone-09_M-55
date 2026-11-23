@@ -9,7 +9,13 @@
 ![Better Auth](https://img.shields.io/badge/Auth-Better%20Auth-e7436d)
 ![Stripe](https://img.shields.io/badge/Payments-Stripe%20Checkout-635BFF?logo=stripe&logoColor=white)
 
-[**Live Website**](https://sofian-wedplan.vercel.app/) · [**Client Repository**](https://github.com/marleyDip/Programming-Hero_A-09_Wedding-Planning-Platform_NextJS-TS-betterAuth-Shadcn-Motion_Milestone-09_M-55) · [**Server Repository**](https://github.com/marleyDip/PH_A-09_Wedding-Planning-Platform_ExpressJS-TypeScript-MongoDB-Stripe-BetterAuthJWT_Milestone-9_M-55)
+<!-- [**Live Website**](https://sofian-wedplan.vercel.app/) · [**Client Repository**](https://github.com/marleyDip/Programming-Hero_A-09_Wedding-Planning-Platform_NextJS-TS-betterAuth-Shadcn-Motion_Milestone-09_M-55) · [**Server Repository**](https://github.com/marleyDip/PH_A-09_Wedding-Planning-Platform_ExpressJS-TypeScript-MongoDB-Stripe-BetterAuthJWT_Milestone-9_M-55) -->
+
+[![Live Website](https://img.shields.io/badge/🌐_Live_Website-Visit_WedPlan-15803d?style=for-the-badge)](https://sofian-wedplan.vercel.app/)
+
+[![Client Repository](https://img.shields.io/badge/💻_Client_Repository-GitHub-2563eb?style=for-the-badge)](https://github.com/marleyDip/Programming-Hero_A-09_Wedding-Planning-Platform_NextJS-TS-betterAuth-Shadcn-Motion_Milestone-09_M-55)
+
+[![Server Repository](https://img.shields.io/badge/🖥️_Server_Repository-GitHub-7c3aed?style=for-the-badge)](https://github.com/marleyDip/PH_A-09_Wedding-Planning-Platform_ExpressJS-TypeScript-MongoDB-Stripe-BetterAuthJWT_Milestone-9_M-55)
 
 ---
 
@@ -58,11 +64,13 @@ This repository is the **client** (Next.js). The REST API, MongoDB access and th
 
 ## 2. Links
 
-| | |
-| --- | --- |
-| 🌐 Live website | [Visit WedPlan](https://sofian-wedplan.vercel.app/) |
-| 💻 Client repository (this repo) | [View Client Repository](https://github.com/marleyDip/Programming-Hero_A-09_Wedding-Planning-Platform_NextJS-TS-betterAuth-Shadcn-Motion_Milestone-09_M-55) |
-| 🖥️ Server repository | [View Server Repository](https://github.com/marleyDip/PH_A-09_Wedding-Planning-Platform_ExpressJS-TypeScript-MongoDB-Stripe-BetterAuthJWT_Milestone-9_M-55) |
+## 🔗 Project Links
+
+| Platform | Link |
+| :--- | :--- |
+| 🌐 **Live Website** | [Visit WedPlan](https://sofian-wedplan.vercel.app/) |
+| 💻 **Client Repository (This Repo)** | [View Client Repository](https://github.com/marleyDip/Programming-Hero_A-09_Wedding-Planning-Platform_NextJS-TS-betterAuth-Shadcn-Motion_Milestone-09-M-55) |
+| 🖥️ **Server Repository** | [View Server Repository](https://github.com/marleyDip/PH_A-09_Wedding-Planning-Platform_ExpressJS-TypeScript-MongoDB-Stripe-BetterAuthJWT_Milestone-9_M-55) |
 
 ### Evaluation access
 
