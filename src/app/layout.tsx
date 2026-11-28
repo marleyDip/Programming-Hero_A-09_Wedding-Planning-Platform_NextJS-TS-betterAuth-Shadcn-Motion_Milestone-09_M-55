@@ -45,7 +45,7 @@ export default function RootLayout({
         {/* Once per session: it shows once per browser session. Use <SplashScreen once={false} /> to show it on every load while you test. */}
         <SplashScreen />
 
-        <ThemeProvider>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           {/* Navbar */}
           <Suspense fallback={null}>
             <NavbarWrapper />

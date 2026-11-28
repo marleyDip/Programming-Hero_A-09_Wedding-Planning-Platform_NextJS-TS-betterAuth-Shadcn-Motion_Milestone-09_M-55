@@ -74,6 +74,70 @@ function uploadFile(
   });
 }
 
+/**
+ * Saved photo shown through the Next image optimizer (your server fetches it, so it still loads when the
+ * browser can't reach i.ibb.co directly). A just-uploaded ImgBB link can take a moment to become available, so a failed load is retried a few
+ * times (1s, 2s, 4s). If it still fails, a small tile with an "Open link" shortcut is shown instead of
+ * a broken image, so you can test the link directly.
+ */
+function RetryImg({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const [retryState, setRetryState] = useState({
+    src,
+    attempt: 0,
+    failed: false,
+  });
+  const attempt = retryState.src === src ? retryState.attempt : 0;
+  const failed = retryState.src === src && retryState.failed;
+
+  if (failed)
+    return (
+      <div className="absolute inset-0 grid place-content-center gap-1 p-2 text-center text-[11px] text-muted-foreground">
+        <span>Preview unavailable</span>
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-brand underline"
+        >
+          Open link
+        </a>
+      </div>
+    );
+
+  const url = attempt
+    ? `${src}${src.includes("?") ? "&" : "?"}r=${attempt}`
+    : src;
+
+  return (
+    <Image
+      key={attempt}
+      src={url}
+      alt={alt}
+      fill
+      sizes="(max-width: 640px) 50vw, 25vw"
+      onError={() => {
+        if (attempt >= 3) {
+          setRetryState({ src, attempt, failed: true });
+          return;
+        }
+        setTimeout(
+          () => setRetryState({ src, attempt: attempt + 1, failed: false }),
+          1000 * 2 ** attempt,
+        );
+      }}
+      className={className}
+    />
+  );
+}
+
 const R = 20;
 const C = 2 * Math.PI * R;
 
@@ -196,7 +260,8 @@ export default function ServiceImageManager({
         <AnimatePresence initial={false}>
           {images.map((url, i) => (
             <motion.div
-              key={url}
+              // key={url}
+              key={images.indexOf(url) === i ? url : `${url}#${i}`} // old data may already contain the same link twice
               layout
               initial={{ opacity: 0, scale: 0.8, rotateY: -40 }}
               animate={{ opacity: 1, scale: 1, rotateY: 0 }}
@@ -205,13 +270,10 @@ export default function ServiceImageManager({
               style={{ transformPerspective: 700 }}
               className="group relative aspect-4/3 overflow-hidden rounded-2xl border border-border bg-muted shadow-md"
             >
-              <Image
+              <RetryImg
                 src={url}
                 alt={`Service photo ${i + 1}`}
-                fill
-                sizes="(max-width: 640px) 50vw, 25vw"
-                unoptimized
-                className="object-cover transition-transform duration-500 group-hover:scale-110"
+                className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
               />
 
               <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />

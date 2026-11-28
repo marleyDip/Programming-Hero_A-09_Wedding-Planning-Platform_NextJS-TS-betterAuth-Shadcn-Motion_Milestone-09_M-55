@@ -11,41 +11,42 @@
  * The cards render immediately from built-in defaults, then upgrade with API data. If the API
  * is down they still work (just without counts), so the section never looks broken.
  *
+ * Layout fix: card content now lives in a flex column (top row, medallion row, text block) instead of
+ * absolutely positioned layers, so long names, descriptions and tags can never overlap or spill out.
+ * The card grows to fit its content, and text wraps / clamps on every breakpoint (sm, md, lg, xl).
+ *
  * 3D / motion: bento layout, 3D flip-in on scroll, mouse tilt with perspective + moving glare,
  * layered depth (medallion, count pill, arrow float above the plate), watermark icon parallax,
- * tags that slide up on hover (always visible on wide cards), animated counters.
+ * tags that slide up on hover (hover-capable devices only), animated counters.
  * Responsive: 1 col -> 2 col -> 4-col bento. Respects prefers-reduced-motion.
  */
 
-import
-    {
-        getCategories,
-        getCategoryCounts,
-        type Category,
-    } from "@/lib/services-api";
-import
-    {
-        animate,
-        motion,
-        useInView,
-        useMotionTemplate,
-        useMotionValue,
-        useReducedMotion,
-        useSpring,
-    } from "framer-motion";
-import
-    {
-        ArrowRight,
-        ArrowUpRight,
-        Building2,
-        Camera,
-        Flower2,
-        Heart,
-        Shirt,
-        Sparkles,
-        UtensilsCrossed,
-        type LucideIcon,
-    } from "lucide-react";
+import {
+  getCategories,
+  getCategoryCounts,
+  type Category,
+} from "@/lib/services-api";
+import {
+  animate,
+  motion,
+  useInView,
+  useMotionTemplate,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+} from "framer-motion";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Building2,
+  Camera,
+  Flower2,
+  Heart,
+  Shirt,
+  Sparkles,
+  UtensilsCrossed,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -174,7 +175,16 @@ function ServiceCount({ value }: { value: number | undefined }) {
 
   return (
     <>
-      <span ref={ref}>0</span> {value === 1 ? "service" : "services"}
+      {/* <span ref={ref}>0</span> {value === 1 ? "service" : "services"} */}
+
+      <span className="inline-flex items-baseline gap-1.5 tabular-nums">
+        <span ref={ref} className="text-sm font-bold tracking-tight text-white">
+          0
+        </span>
+        <span className="text-[11px] font-medium text-white/75">
+          {value === 1 ? "service" : "services"}
+        </span>
+      </span>
     </>
   );
 }
@@ -247,12 +257,12 @@ function CategoryCard({
         delay: (index % 4) * 0.09,
       }}
       style={{ transformOrigin: "50% 100%" }}
-      className={SPAN(index)}
+      className={`flex ${SPAN(index)}`}
     >
       <Link
         href={`/services?category=${encodeURIComponent(category.name)}`}
         aria-label={label}
-        className="group block h-full rounded-[1.75rem] outline-none focus-visible:ring-4 focus-visible:ring-brand/40"
+        className="group flex w-full rounded-[1.75rem] outline-none focus-visible:ring-4 focus-visible:ring-brand/40"
       >
         <motion.div
           ref={ref}
@@ -265,10 +275,11 @@ function CategoryCard({
             transformStyle: "preserve-3d",
             transformPerspective: 1100,
           }}
-          className="relative h-full min-h-70 rounded-[1.75rem] shadow-lg transition-shadow duration-500 group-hover:shadow-2xl group-hover:shadow-black/30 sm:min-h-75"
+          className="relative flex min-h-88 w-full min-w-0 flex-col rounded-[1.75rem] p-5 shadow-lg transition-shadow duration-500 group-hover:shadow-2xl group-hover:shadow-black/30 sm:p-6"
         >
-          {/* plate */}
+          {/* plate (background only, never holds text) */}
           <div
+            aria-hidden
             className="absolute inset-0 overflow-hidden rounded-[1.75rem] border border-white/20"
             style={{
               background: `linear-gradient(155deg, ${look.from}, ${look.to})`,
@@ -277,19 +288,18 @@ function CategoryCard({
             {[0.9, 0.66, 0.42].map((s) => (
               <span
                 key={s}
-                aria-hidden
                 className="absolute right-[-8%] top-[-10%] aspect-square rounded-full border border-white/20"
                 style={{ width: `${s * 70}%` }}
               />
             ))}
 
-            <div className="absolute inset-0 bg-linear-to-t from-black/50 via-transparent to-white/15" />
+            {/* bottom scrim keeps text readable on every gradient */}
+            <div className="absolute inset-0 bg-linear-to-t from-black/60 via-black/5 to-white/15" />
 
             <div className="absolute inset-0 opacity-30 bg-[radial-gradient(rgba(255,255,255,0.4)_1px,transparent_1px)] bg-size-[18px_18px]" />
 
             {/* watermark icon with parallax */}
             <motion.div
-              aria-hidden
               style={{ x: mxs, y: mys }}
               className="absolute -bottom-6 -right-6 text-white/15 transition-transform duration-700 group-hover:scale-110 group-hover:-rotate-6"
             >
@@ -300,97 +310,132 @@ function CategoryCard({
             </motion.div>
 
             <motion.div
-              aria-hidden
               style={{ background: glare }}
               className="absolute inset-0 mix-blend-soft-light"
             />
           </div>
 
-          {/* index number */}
-          <span
-            aria-hidden
-            className="absolute left-6 top-5 font-serif text-4xl font-bold text-white/30"
-            style={{ transform: "translateZ(20px)" }}
-          >
-            0{index + 1}
-          </span>
+          {/* row 1: index + count pill */}
+          <div className="relative flex items-start justify-between gap-3">
+            {/* <span
+              aria-hidden
+              className="font-serif text-3xl font-bold leading-none text-white/30 sm:text-4xl"
+              style={{ transform: "translateZ(20px)" }}
+            >
+              0{index + 1}
+            </span> */}
 
-          {/* count pill */}
-          <div
-            className="absolute right-5 top-5"
-            style={{ transform: "translateZ(55px)" }}
-          >
-            <span className="inline-flex items-center rounded-full border border-white/30 bg-neutral-950/45 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur-md">
+            <span
+              aria-hidden
+              className="font-serif text-3xl font-bold leading-none text-white/25 transition-all duration-500 group-hover:translate-x-1 group-hover:text-white/50 sm:text-4xl"
+              style={{ transform: "translateZ(20px)" }}
+            >
+              0{index + 1}
+            </span>
+
+            {/* <span
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-white/30 bg-neutral-950/45 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur-md"
+              style={{ transform: "translateZ(55px)" }}
+            >
+              <ServiceCount value={countsReady ? (count ?? 0) : undefined} />
+            </span> */}
+
+            <span
+              className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-white/25 bg-black/40 px-3.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.25)] backdrop-blur-md transition-colors duration-300 group-hover:border-white/45 group-hover:bg-black/55"
+              style={{ transform: "translateZ(55px)" }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+              <ServiceCount value={countsReady ? (count ?? 0) : undefined} />
+            </span>
+
+            {/* <span
+              className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-white/30 bg-neutral-950/45 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur-md"
+              style={{ transform: "translateZ(55px)" }}
+            >
               {countsReady ? (
                 <ServiceCount value={count ?? 0} />
               ) : (
                 <ServiceCount value={undefined} />
               )}
+            </span> */}
+          </div>
+
+          {/* row 2: medallion + arrow */}
+          <div className="relative mt-5 flex items-center justify-between gap-3">
+            <div style={{ transform: "translateZ(85px)" }}>
+              <motion.div
+                animate={reduce ? undefined : { y: [0, -7, 0] }}
+                transition={{
+                  duration: 4 + (index % 3) * 0.6,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+                className="grid h-16 w-16 place-items-center rounded-2xl border border-white/40 bg-white/20 text-white shadow-2xl backdrop-blur-md"
+              >
+                <Icon className="h-8 w-8" strokeWidth={1.5} />
+              </motion.div>
+            </div>
+
+            <span
+              aria-hidden
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-neutral-900 shadow-xl transition-all duration-300 group-hover:scale-110 group-hover:bg-neutral-950 group-hover:text-white"
+              style={{ transform: "translateZ(75px)" }}
+            >
+              <ArrowUpRight className="h-5 w-5 transition-transform duration-300 group-hover:rotate-45" />
             </span>
           </div>
 
-          {/* icon medallion */}
+          {/* row 3: text block, pinned to the bottom, full width, always wraps */}
           <div
-            className="absolute left-6 top-[27%]"
-            style={{ transform: "translateZ(85px)" }}
-          >
-            <motion.div
-              animate={reduce ? undefined : { y: [0, -7, 0] }}
-              transition={{
-                duration: 4 + (index % 3) * 0.6,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-              className="grid h-16 w-16 place-items-center rounded-2xl border border-white/40 bg-white/20 text-white shadow-2xl backdrop-blur-md sm:h-18 sm:w-18"
-            >
-              <Icon className="h-8 w-8" strokeWidth={1.5} />
-            </motion.div>
-          </div>
-
-          {/* text block */}
-          <div
-            className="absolute inset-x-6 bottom-6 pr-16"
+            className="relative mt-auto min-w-0 pt-8"
             style={{ transform: "translateZ(50px)" }}
           >
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/75">
+            <p className="wrap-break-word text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80 sm:text-[11px] sm:tracking-[0.2em]">
               {category.tagline}
             </p>
 
-            <h3 className="mt-1.5 font-serif text-2xl font-semibold leading-tight text-white drop-shadow sm:text-[1.75rem]">
+            <h3
+              className={`mt-1.5 text-balance wrap-break-word font-serif text-xl font-semibold leading-snug text-white drop-shadow sm:text-2xl ${
+                wide ? "lg:text-3xl" : "xl:text-[1.65rem]"
+              }`}
+            >
               {category.name}
             </h3>
 
-            <p className="mt-2 hidden max-w-md text-sm leading-relaxed text-white/80 sm:block">
+            <p
+              className={`mt-2 max-w-md text-sm leading-relaxed text-white/85 ${
+                wide ? "line-clamp-3" : "line-clamp-3 lg:line-clamp-4"
+              }`}
+            >
               {category.description}
             </p>
 
-            {/* tags: always on wide cards, slide up on hover for the others */}
+            {/* tags: wrap inside the card; on mouse devices they slide up on hover */}
             <ul
-              className={`mt-3 flex flex-wrap gap-1.5 transition-all duration-500 ${
+              className={`mt-3 flex min-w-0 flex-wrap gap-1.5 transition-all duration-500 [@media(hover:hover)]:translate-y-3 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-visible:translate-y-0 [@media(hover:hover)]:group-focus-visible:opacity-100 ${
                 wide
-                  ? "opacity-100"
-                  : "translate-y-3 opacity-100 sm:opacity-0 sm:group-hover:translate-y-0 sm:group-hover:opacity-100 sm:group-focus-visible:translate-y-0 sm:group-focus-visible:opacity-100"
+                  ? "[@media(hover:hover)]:lg:translate-y-0 [@media(hover:hover)]:lg:opacity-100"
+                  : ""
               }`}
             >
-              {category.tags.slice(0, wide ? 4 : 3).map((t) => (
+              {category.tags.slice(0, 4).map((t, ti) => (
                 <li
                   key={t}
-                  className="rounded-full border border-white/25 bg-white/15 px-2.5 py-1 text-[11px] text-white backdrop-blur-sm"
+                  className={`max-w-full truncate rounded-full border border-white/25 bg-white/15 px-2.5 py-1 text-[11px] text-white backdrop-blur-sm ${
+                    ti < 3 ? "" : wide ? "hidden lg:block" : "hidden"
+                  }`}
                 >
                   {t}
                 </li>
+
+                // <li
+                //   key={t}
+                //   className="rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-sm"
+                // >
+                //   {t}
+                // </li>
               ))}
             </ul>
-          </div>
-
-          {/* arrow button */}
-          <div
-            className="absolute bottom-6 right-5"
-            style={{ transform: "translateZ(75px)" }}
-          >
-            <span className="grid h-12 w-12 place-items-center rounded-full bg-white text-neutral-900 shadow-xl transition-all duration-300 group-hover:scale-110 group-hover:bg-neutral-950 group-hover:text-white">
-              <ArrowUpRight className="h-5 w-5 transition-transform duration-300 group-hover:rotate-45" />
-            </span>
           </div>
         </motion.div>
       </Link>
@@ -561,7 +606,7 @@ export default function Categories() {
         </div>
 
         {/* bento grid */}
-        <ul className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6 perspective-[1500px]">
+        <ul className="mt-14 grid gap-5 perspective-[1500px] sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
           {categories.map((c, i) => (
             <CategoryCard
               key={c.id}

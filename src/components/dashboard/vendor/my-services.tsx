@@ -119,6 +119,8 @@ function ServiceCard({
   onView: () => void;
   onDelete: () => void;
 }) {
+  // console.log("Service", s);
+
   const { ref, reduce, style, glare, handlers } = useTilt(6, 16);
   const [ok, setOk] = useState(true);
   const m = categoryMeta(s.category);
@@ -331,17 +333,24 @@ function DetailsDialog({
     <Modal open={!!s} onClose={onClose} label="Service information" wide>
       {cur && st && (
         <div>
-          <div className="relative aspect-16/8 overflow-hidden bg-muted perspective:[900px]">
+          <div className="relative aspect-16/8 overflow-hidden bg-muted perspective-[900px]">
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.img
+              <motion.div
                 key={cur.images[i]}
-                src={cur.images[i]}
-                alt=""
                 initial={{ opacity: 0, rotateY: 20 }}
                 animate={{ opacity: 1, rotateY: 0 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
+                className="absolute inset-0"
+              >
+                <Image
+                  src={cur.images[i]}
+                  alt={`${cur.name}, photo ${i + 1}`}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 768px"
+                  priority
+                  className="object-cover"
+                />
+              </motion.div>
             </AnimatePresence>
 
             <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent" />

@@ -7,7 +7,7 @@ import { BRANCHES } from "./branches";
 const client = new MongoClient(process.env.MONGODB_URI as string);
 const db = client.db("wedding-planning-platform");
 
-export const auth = betterAuth({
+export const auth1 = betterAuth({
   database: mongodbAdapter(db, {
     client,
   }),

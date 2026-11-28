@@ -1,15 +1,18 @@
+import { client, db } from "@/lib/mongodb";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
+
 import { betterAuth } from "better-auth";
 import { APIError, getOAuthState } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
-import { MongoClient } from "mongodb";
 
-const client = new MongoClient(process.env.MONGODB_URI as string);
-const db = client.db("wedding-planning-platform");
+// import { MongoClient } from "mongodb";
+
+// const client = new MongoClient(process.env.MONGODB_URI as string);
+// const db = client.db("wedding-planning-platform");
 
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL, // also used as the JWT issuer and audience
-  secret: process.env.BETTER_AUTH_SECRET,
+  // baseURL: process.env.BETTER_AUTH_URL, // also used as the JWT issuer and audience
+  // secret: process.env.BETTER_AUTH_SECRET,
   // trustedOrigins: [process.env.CLIENT_URL as string],
 
   database: mongodbAdapter(db, { client }),

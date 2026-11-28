@@ -6,14 +6,17 @@
  *
  * - "Keycap" trigger with a solid 3D bottom edge that presses down on click
  * - Panel flips open from the top with perspective; options stagger in
+ * - The panel is rendered in a portal on document.body, so parent stacking contexts
+ *   (transform / backdrop-blur / overflow) can never cover or clip it
+ * - Opens upward automatically when there is not enough room below
  * - Fully keyboard accessible (ArrowUp/Down, Home/End, Enter/Space, Esc, Tab) with proper
- *
  *   combobox / listbox roles, closes on outside click, scrolls the highlighted option into view
  */
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, ChevronDown, type LucideIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface SelectOption {
   value: string;
@@ -41,8 +44,13 @@ export default function FancySelect({
 }: Props) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
   const reduce = useReducedMotion();
+
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<React.CSSProperties | null>(null);
+
   const selected = Math.max(
     0,
     options.findIndex((o) => o.value === value),
@@ -50,17 +58,54 @@ export default function FancySelect({
   const [hi, setHi] = useState(selected);
   const current = options[selected];
 
+  // position the portal panel from the button's on-screen rectangle
+  const measure = useCallback(() => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+
+    const below = window.innerHeight - r.bottom;
+    const up = below < 300 && r.top > below; // flip upward when there is no room below
+
+    setPos({
+      left: r.left,
+      width: r.width,
+      ...(up
+        ? { bottom: window.innerHeight - r.top + 10 }
+        : { top: r.bottom + 10 }),
+      transformOrigin: up ? "bottom center" : "top center",
+    });
+  }, []);
+
   useEffect(() => {
     if (!open) return;
 
     const onDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!root.current?.contains(t) && !list.current?.contains(t))
+        setOpen(false);
+    };
+
+    const onScroll = (e: Event) => {
+      // scrolling inside the options list itself should not re-measure
+      if (
+        list.current &&
+        e.target instanceof Node &&
+        list.current.contains(e.target)
+      )
+        return;
+      measure();
     };
 
     document.addEventListener("pointerdown", onDown);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", onScroll, true); // true = also inner scrollers
 
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [open]);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, measure]);
 
   useEffect(() => {
     if (open)
@@ -71,10 +116,14 @@ export default function FancySelect({
 
   const openMenu = () => {
     setHi(selected);
+    measure();
     setOpen(true);
   };
+
   const choose = (i: number) => {
-    onChange(options[i].value);
+    const opt = options[i];
+    if (!opt) return;
+    onChange(opt.value);
     setOpen(false);
   };
 
@@ -136,10 +185,7 @@ export default function FancySelect({
   const CurrentIcon = current?.icon ?? LeadIcon;
 
   return (
-    <div
-      ref={root}
-      className={`relative ${open ? "z-40" : "z-10"} ${className}`}
-    >
+    <div ref={root} className={`relative ${className}`}>
       {label && (
         <span
           id={`${id}-label`}
@@ -150,6 +196,7 @@ export default function FancySelect({
       )}
 
       <motion.button
+        ref={btn}
         type="button"
         role="combobox"
         aria-haspopup="listbox"
@@ -198,96 +245,101 @@ export default function FancySelect({
         </motion.span>
       </motion.button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.ul
-            id={`${id}-list`}
-            role="listbox"
-            aria-label={label ?? "Select an option"}
-            aria-labelledby={label ? `${id}-label` : undefined}
-            initial={
-              reduce
-                ? { opacity: 0 }
-                : { opacity: 0, rotateX: -75, y: -8, scale: 0.96 }
-            }
-            animate={{ opacity: 1, rotateX: 0, y: 0, scale: 1 }}
-            exit={
-              reduce
-                ? { opacity: 0 }
-                : {
-                    opacity: 0,
-                    rotateX: -50,
-                    y: -6,
-                    transition: { duration: 0.16 },
-                  }
-            }
-            transition={{ type: "spring", stiffness: 260, damping: 22 }}
-            style={{ transformOrigin: "top center", transformPerspective: 900 }}
-            className="absolute left-0 right-0 top-full z-50 mt-2.5 max-h-72 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/25 backdrop-blur-xl"
-          >
-            {options.map((o, i) => {
-              const isSel = o.value === value;
-              const isHi = i === hi;
-              const Icon = o.icon;
-              return (
-                <motion.li
-                  key={o.value || "__all"}
-                  id={`${id}-opt-${i}`}
-                  role="option"
-                  aria-selected={isSel}
-                  initial={reduce ? false : { opacity: 0, x: -14 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: Math.min(i, 8) * 0.03 }}
-                  onPointerEnter={() => setHi(i)}
-                  onClick={() => choose(i)}
-                  className={`relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                    isHi
-                      ? "bg-brand-soft text-foreground"
-                      : "text-foreground/85"
-                  }`}
-                >
-                  {isHi && !reduce && (
-                    <motion.span
-                      layoutId={`${id}-hl`}
-                      className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-brand"
-                      transition={{
-                        type: "spring",
-                        stiffness: 500,
-                        damping: 36,
-                      }}
-                    />
-                  )}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {open && pos && (
+              <motion.ul
+                ref={list}
+                id={`${id}-list`}
+                role="listbox"
+                aria-label={label ?? "Select an option"}
+                aria-labelledby={label ? `${id}-label` : undefined}
+                initial={
+                  reduce
+                    ? { opacity: 0 }
+                    : { opacity: 0, rotateX: -75, y: -8, scale: 0.96 }
+                }
+                animate={{ opacity: 1, rotateX: 0, y: 0, scale: 1 }}
+                exit={
+                  reduce
+                    ? { opacity: 0 }
+                    : {
+                        opacity: 0,
+                        rotateX: -50,
+                        y: -6,
+                        transition: { duration: 0.16 },
+                      }
+                }
+                transition={{ type: "spring", stiffness: 260, damping: 22 }}
+                style={{ ...pos, position: "fixed", transformPerspective: 900 }}
+                className="fancy-scroll z-9999 max-h-72 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/25 backdrop-blur-xl"
+              >
+                {options.map((o, i) => {
+                  const isSel = o.value === value;
+                  const isHi = i === hi;
+                  const Icon = o.icon;
+                  return (
+                    <motion.li
+                      key={o.value || "__all"}
+                      id={`${id}-opt-${i}`}
+                      role="option"
+                      aria-selected={isSel}
+                      initial={reduce ? false : { opacity: 0, x: -14 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: Math.min(i, 8) * 0.03 }}
+                      onPointerEnter={() => setHi(i)}
+                      onClick={() => choose(i)}
+                      className={`relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                        isHi
+                          ? "bg-brand-soft text-foreground"
+                          : "text-foreground/85"
+                      }`}
+                    >
+                      {isHi && !reduce && (
+                        <motion.span
+                          layoutId={`${id}-hl`}
+                          className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-brand"
+                          transition={{
+                            type: "spring",
+                            stiffness: 500,
+                            damping: 36,
+                          }}
+                        />
+                      )}
 
-                  {Icon && (
-                    <Icon
-                      className={`h-4 w-4 shrink-0 ${isSel ? "text-brand" : "text-muted-foreground"}`}
-                    />
-                  )}
+                      {Icon && (
+                        <Icon
+                          className={`h-4 w-4 shrink-0 ${isSel ? "text-brand" : "text-muted-foreground"}`}
+                        />
+                      )}
 
-                  <span
-                    className={`min-w-0 flex-1 truncate ${isSel ? "font-semibold" : ""}`}
-                  >
-                    {o.label}
-                  </span>
+                      <span
+                        className={`min-w-0 flex-1 truncate ${isSel ? "font-semibold" : ""}`}
+                      >
+                        {o.label}
+                      </span>
 
-                  {o.count !== undefined && (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      {o.count}
-                    </span>
-                  )}
+                      {o.count !== undefined && (
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          {o.count}
+                        </span>
+                      )}
 
-                  {isSel && (
-                    <Check
-                      className="h-4 w-4 shrink-0 text-brand"
-                      strokeWidth={3}
-                    />
-                  )}
-                </motion.li>
-              );
-            })}
-          </motion.ul>
+                      {isSel && (
+                        <Check
+                          className="h-4 w-4 shrink-0 text-brand"
+                          strokeWidth={3}
+                        />
+                      )}
+                    </motion.li>
+                  );
+                })}
+              </motion.ul>
+            )}
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </div>
   );
 }

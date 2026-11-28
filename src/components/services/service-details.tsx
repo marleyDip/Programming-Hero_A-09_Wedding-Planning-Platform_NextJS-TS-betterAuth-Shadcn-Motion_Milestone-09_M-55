@@ -22,47 +22,49 @@
 
 import { SectionBackdrop, useTilt } from "@/components/home/section-kit";
 import { authClient } from "@/lib/auth-client";
-import {
-  ServiceError,
-  createBooking,
-  getAllServices,
-  getServiceById,
-  hasActiveBooking,
-  type Service,
-  type ServiceDetail,
-} from "@/lib/services-api";
+import
+    {
+        ServiceError,
+        createBooking,
+        getAllServices,
+        getServiceById,
+        hasActiveBooking,
+        type Service,
+        type ServiceDetail,
+    } from "@/lib/services-api";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUpRight,
-  Building2,
-  CalendarCheck,
-  CalendarDays,
-  Camera,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Crown,
-  Expand,
-  Flower2,
-  LayoutGrid,
-  Loader2,
-  Lock,
-  MapPin,
-  MessageSquare,
-  SearchX,
-  Send,
-  Share2,
-  ShieldCheck,
-  Shirt,
-  Sparkles,
-  Star,
-  UtensilsCrossed,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import
+    {
+        AlertTriangle,
+        ArrowLeft,
+        ArrowRight,
+        ArrowUpRight,
+        Building2,
+        CalendarCheck,
+        CalendarDays,
+        Camera,
+        Check,
+        ChevronLeft,
+        ChevronRight,
+        Crown,
+        Expand,
+        Flower2,
+        LayoutGrid,
+        Loader2,
+        Lock,
+        MapPin,
+        MessageSquare,
+        SearchX,
+        Send,
+        Share2,
+        ShieldCheck,
+        Shirt,
+        Sparkles,
+        Star,
+        UtensilsCrossed,
+        X,
+        type LucideIcon,
+    } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -1065,8 +1067,14 @@ export default function ServiceDetails({ id }: { id: string }) {
       return "Your account is blocked, so booking is unavailable.";
     if (user.role === "admin")
       return "Admins can't submit customer booking requests.";
+    if (user.role === "vendor")
+      return "Vendor accounts cannot submit booking requests. Please use a customer account to book services.";
     if (user.id === service.vendor.id)
       return "This is your own service, so you can't book it.";
+
+    // if (user.role === "vendor") return "A vendor can not booking other booking Requests.";
+    // if (user.role === "vendor") return "Vendors cannot book services. Vendors cannot make bookings.";
+
     return null;
   }, [user, service]);
 

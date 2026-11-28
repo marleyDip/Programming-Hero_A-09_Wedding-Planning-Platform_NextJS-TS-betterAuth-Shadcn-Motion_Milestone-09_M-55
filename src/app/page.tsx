@@ -1,4 +1,5 @@
 import Categories from "@/components/home/categories";
+// import Categories from "@/components/home/categories/index";
 import Destinations from "@/components/home/destinations";
 import FeaturedServices from "@/components/home/featured-services";
 import Hero3D from "@/components/home/hero-3d";

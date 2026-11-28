@@ -67,6 +67,7 @@ import {
   Tag,
   Wallet,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -152,6 +153,7 @@ function Section({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.1 }}
       transition={{ type: "spring", stiffness: 90, damping: 18 }}
+      // className="focus-within:z-30"
       className="relative rounded-3xl border border-border bg-card/90 p-6 shadow-lg backdrop-blur sm:p-7"
     >
       <div className="mb-5 flex items-start gap-3.5">
@@ -249,6 +251,43 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
+/**
+ * Photo for the live preview. It goes through the Next image optimizer (your server fetches it), so it
+ * still shows when the browser can't reach i.ibb.co directly. A just-uploaded ImgBB link can take a
+ * moment to become available, so a failed load is retried (1s, 2s, 4s). The parent gives it
+ * key={src}, so it starts fresh whenever the photo changes.
+ */
+function PreviewPhoto({
+  src,
+  sizes,
+  priority,
+}: {
+  src: string;
+  sizes: string;
+  priority?: boolean;
+}) {
+  const [attempt, setAttempt] = useState(0);
+  const url = attempt
+    ? `${src}${src.includes("?") ? "&" : "?"}r=${attempt}`
+    : src;
+
+  return (
+    <Image
+      key={attempt}
+      src={url}
+      alt=""
+      fill
+      sizes={sizes}
+      priority={priority}
+      onError={() => {
+        if (attempt < 3)
+          setTimeout(() => setAttempt((n) => n + 1), 1000 * 2 ** attempt);
+      }}
+      className="object-cover"
+    />
+  );
+}
+
 const Skel = ({ w }: { w: string }) => (
   <span
     className={`inline-block h-3.5 animate-pulse rounded-full bg-muted ${w}`}
@@ -275,15 +314,18 @@ function PreviewCard({ f, user }: { f: Form; user: VendorUser }) {
         <div className="relative aspect-4/3 overflow-hidden rounded-t-3xl bg-muted">
           <AnimatePresence mode="wait" initial={false}>
             {f.images[0] ? (
-              <motion.img
+              <motion.div
                 key={f.images[0]}
-                src={f.images[0]}
-                alt=""
                 initial={{ opacity: 0, scale: 1.1 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
+                className="absolute inset-0"
+              >
+                <PreviewPhoto
+                  src={f.images[0]}
+                  sizes="(max-width: 1024px) 100vw, 480px"
+                />
+              </motion.div>
             ) : (
               <motion.div
                 key="ph"
@@ -416,15 +458,18 @@ function PreviewDetails({ f, user }: { f: Form; user: VendorUser }) {
       <div className="relative aspect-4/3 overflow-hidden rounded-2xl bg-muted perspective:[900px]">
         <AnimatePresence mode="popLayout" initial={false}>
           {f.images[idx] ? (
-            <motion.img
+            <motion.div
               key={f.images[idx]}
-              src={f.images[idx]}
-              alt=""
               initial={reduce ? { opacity: 0 } : { opacity: 0, rotateY: 25 }}
               animate={{ opacity: 1, rotateY: 0 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
+              className="absolute inset-0"
+            >
+              <PreviewPhoto
+                src={f.images[idx]}
+                sizes="(max-width: 1024px) 100vw, 480px"
+              />
+            </motion.div>
           ) : (
             <motion.div
               key="ph"
@@ -514,6 +559,7 @@ function PreviewDetails({ f, user }: { f: Form; user: VendorUser }) {
       <div className="flex items-center gap-3 rounded-2xl border border-border p-3">
         <span className="relative">
           <Avatar src={user.image} name={biz} size={44} />
+
           {premium && (
             <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-gold text-neutral-900 ring-2 ring-card">
               <Crown className="h-3 w-3" />
@@ -692,8 +738,8 @@ export default function ServiceForm({ serviceId }: { serviceId?: string }) {
         editing ? "Couldn't update the service" : "Couldn't submit the service",
         {
           description:
-            e instanceof ApiError && e.status === 403
-              ? "You can only change your own services."
+            e instanceof ApiError && e.status < 500
+              ? e.message
               : "Please check your connection and try again.",
         },
       );
@@ -887,6 +933,7 @@ export default function ServiceForm({ serviceId }: { serviceId?: string }) {
               >
                 Description
               </Label>
+
               <textarea
                 id="sv-desc"
                 rows={6}

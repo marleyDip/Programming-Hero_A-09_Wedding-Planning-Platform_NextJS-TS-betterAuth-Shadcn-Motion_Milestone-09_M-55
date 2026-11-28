@@ -21,7 +21,7 @@ const db = client.db("wedding-planning-platform");
 /** Roles a person may pick at public sign-up. "admin" is deliberately NOT here. */
 const PUBLIC_ROLES = ["customer", "vendor"] as const;
 
-export const auth = betterAuth({
+export const auth2 = betterAuth({
   baseURL: SERVER_URL,
   secret: env("BETTER_AUTH_SECRET"),
   trustedOrigins: [CLIENT_URL],

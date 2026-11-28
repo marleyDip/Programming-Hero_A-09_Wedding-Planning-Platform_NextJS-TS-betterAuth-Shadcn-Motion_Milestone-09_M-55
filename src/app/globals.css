@@ -145,3 +145,45 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* WedPlan custom scrollbar for dropdown lists */
+.fancy-scroll {
+  scrollbar-gutter: stable;
+}
+
+.fancy-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.fancy-scroll::-webkit-scrollbar-track {
+  margin: 10px 0;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+
+.fancy-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  /* transparent border + padding-box makes the thumb look slim and inset */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  background-image: linear-gradient(180deg, var(--logo-from), var(--brand));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25);
+}
+
+.fancy-scroll::-webkit-scrollbar-thumb:hover {
+  border-width: 2px; /* grows slightly on hover */
+  filter: brightness(1.1) saturate(1.15);
+}
+
+.fancy-scroll::-webkit-scrollbar-thumb:active {
+  filter: brightness(0.95);
+}
+
+/* Firefox only. Chrome ignores the rules above if scrollbar-color is set,
+   so this is wrapped to apply only where ::-webkit-scrollbar is unsupported. */
+@supports not selector(::-webkit-scrollbar) {
+  .fancy-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--brand) transparent;
+  }
+}
